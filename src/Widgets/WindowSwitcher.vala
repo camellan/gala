@@ -238,10 +238,8 @@ namespace Gala {
         }
 
         private void open_switcher () {
-            var display = wm.get_display ();
-
             if (container.get_n_children () == 0) {
-                Utils.bell (display);
+                Clutter.get_default_backend ().get_default_seat ().bell_notify ();
                 return;
             }
 
@@ -262,6 +260,7 @@ namespace Gala {
             caption.visible = false;
             caption.margin_bottom = caption.margin_top = WRAPPER_PADDING * scaling_factor;
 
+            var display = wm.get_display ();
             var monitor = display.get_current_monitor ();
             var geom = display.get_monitor_geometry (monitor);
 
@@ -369,13 +368,13 @@ namespace Gala {
         }
 
         private void next_window (Meta.Display display, Meta.Workspace? workspace, bool backward) {
-            Clutter.Actor actor;
-            var current = cur_icon;
-
             if (container.get_n_children () == 1) {
-                Utils.bell (display);
+                Clutter.get_default_backend ().get_default_seat ().bell_notify ();
                 return;
             }
+
+            Clutter.Actor actor;
+            var current = cur_icon;
 
             if (!backward) {
                 actor = current.get_next_sibling ();

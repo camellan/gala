@@ -14,12 +14,7 @@ gala_lib_sources = files(
     'WindowManager.vala',
 )
 
-gala_resources = gnome.compile_resources(
-    'gala-resources',
-    join_paths(meson.global_source_root(), 'data', 'gala.gresource.xml'),
-    source_dir: join_paths(meson.global_source_root(), 'data'),
-    c_name: 'gala',
-)
+gala_resources = []
 
 gala_lib = shared_library(
     'gala',

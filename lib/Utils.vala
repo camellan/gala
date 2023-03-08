@@ -303,30 +303,13 @@ namespace Gala {
         }
 
         /**
-        * Ring the system bell, will most likely emit a <beep> error sound or, if the
-        * audible bell is disabled, flash the display
-        *
-        * @param display The display to flash, if necessary
-        */
-        public static void bell (Meta.Display display) {
-            if (Meta.Prefs.bell_is_audible ())
-                Gdk.beep ();
-            else
-                display.get_compositor ().flash_display (display);
-        }
-
-        public static int get_ui_scaling_factor () {
-            return Meta.Backend.get_backend ().get_settings ().get_ui_scaling_factor ();
-        }
-
-        /**
          * Returns the pixbuf that is used for close buttons throughout gala at a
          * size of 36px
          *
          * @return the close button pixbuf or null if it failed to load
          */
-        public static Gdk.Pixbuf? get_close_button_pixbuf () {
-            var height = 36 * Utils.get_ui_scaling_factor ();
+        public static Gdk.Pixbuf? get_close_button_pixbuf (float scale_factor) {
+            var height = (int)(36 * scale_factor);
             if (close_pixbuf == null || close_pixbuf.height != height) {
                 try {
                     close_pixbuf = new Gdk.Pixbuf.from_resource_at_scale (
@@ -349,9 +332,9 @@ namespace Gala {
          *
          * @return The close button actor
          */
-        public static Clutter.Actor create_close_button () {
+        public static Clutter.Actor create_close_button (float scale_factor) {
             var texture = new Clutter.Actor ();
-            var pixbuf = get_close_button_pixbuf ();
+            var pixbuf = get_close_button_pixbuf (scale_factor);
 
             texture.reactive = true;
 
@@ -367,8 +350,7 @@ namespace Gala {
                 // we'll just make this red so there's at least something as an
                 // indicator that loading failed. Should never happen and this
                 // works as good as some weird fallback-image-failed-to-load pixbuf
-                var scale = Utils.get_ui_scaling_factor ();
-                texture.set_size (36 * scale, 36 * scale);
+                texture.set_size (36 * scale_factor, 36 * scale_factor);
                 texture.background_color = { 255, 0, 0, 255 };
             }
 
@@ -380,8 +362,8 @@ namespace Gala {
          *
          * @return the close button pixbuf or null if it failed to load
          */
-        public static Gdk.Pixbuf? get_resize_button_pixbuf () {
-            var height = 36 * Utils.get_ui_scaling_factor ();
+        public static Gdk.Pixbuf? get_resize_button_pixbuf (float scale_factor) {
+            var height = (int) (36 * scale_factor);
             if (resize_pixbuf == null || resize_pixbuf.height != height) {
                 try {
                     resize_pixbuf = new Gdk.Pixbuf.from_resource_at_scale (
@@ -404,9 +386,9 @@ namespace Gala {
          *
          * @return The resize button actor
          */
-        public static Clutter.Actor create_resize_button () {
+        public static Clutter.Actor create_resize_button (float scale_factor) {
             var texture = new Clutter.Actor ();
-            var pixbuf = get_resize_button_pixbuf ();
+            var pixbuf = get_resize_button_pixbuf (scale_factor);
 
             texture.reactive = true;
 
@@ -422,8 +404,7 @@ namespace Gala {
                 // we'll just make this red so there's at least something as an
                 // indicator that loading failed. Should never happen and this
                 // works as good as some weird fallback-image-failed-to-load pixbuf
-                var scale = Utils.get_ui_scaling_factor ();
-                texture.set_size (36 * scale, 36 * scale);
+                texture.set_size (36 * scale_factor, 36 * scale_factor);
                 texture.background_color = { 255, 0, 0, 255 };
             }
 
