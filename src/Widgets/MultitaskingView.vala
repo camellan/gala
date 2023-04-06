@@ -93,7 +93,8 @@ namespace Gala {
 
             window_containers_monitors = new List<MonitorClone> ();
             update_monitors ();
-            Meta.MonitorManager.@get ().monitors_changed.connect (update_monitors);
+            unowned var monitor_manager = display.get_context ().get_backend ().get_monitor_manager ();
+            monitor_manager.monitors_changed.connect (update_monitors);
 
             Meta.Prefs.add_listener ((pref) => {
                 if (pref == Meta.Preference.WORKSPACES_ONLY_ON_PRIMARY) {
@@ -151,7 +152,7 @@ namespace Gala {
                     monitor_clone.visible = opened;
 
                     window_containers_monitors.append (monitor_clone);
-                    wm.ui_group.add_child (monitor_clone);
+                    add_child (monitor_clone);
                 }
             }
 
@@ -809,6 +810,7 @@ namespace Gala {
                 case Meta.KeyBindingAction.WORKSPACE_RIGHT:
                 case Meta.KeyBindingAction.SHOW_DESKTOP:
                 case Meta.KeyBindingAction.NONE:
+                case Meta.KeyBindingAction.LOCATE_POINTER_KEY:
                     return false;
                 default:
                     break;

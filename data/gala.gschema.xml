@@ -9,7 +9,9 @@
     <value nick="custom-command" value="5" />
     <value nick="window-overview" value="6" />
     <value nick="window-overview-all" value="7" />
-    <value nick="switch-to-workspace-last" value="8" />
+    <value nick="switch-to-workspace-previous" value="8" />
+    <value nick="switch-to-workspace-next" value="9" />
+    <value nick="switch-to-workspace-last" value="10" />
   </enum>
   <enum id="GalaWindowOverviewType">
     <value nick='grid' value='0'/>
@@ -192,14 +194,14 @@
       <summary>Copy a screenshot of an area to clipboard</summary>
     </key>
     <key type="as" name="switch-input-source">
-      <default><![CDATA[['<Alt>space']]]></default>
+      <default><![CDATA[['']]]></default>
       <summary>Cycle to next keyboard layout</summary>
-      <description>DEPRECATED: This key is deprecated and ignored.</description>
+      <description></description>
     </key>
     <key type="as" name="switch-input-source-backward">
       <default><![CDATA[['']]]></default>
       <summary>Cycle to previous keyboard layout</summary>
-      <description>DEPRECATED: This key is deprecated and ignored.</description>
+      <description></description>
     </key>
     <key type="as" name="pip">
       <default><![CDATA[['<Super>f']]]></default>

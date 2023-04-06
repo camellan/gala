@@ -111,7 +111,7 @@ namespace Gala {
 
             // block propagation of button presses on the close button, otherwise
             // the click action on the icon group will act weirdly
-            close_button.button_press_event.connect (() => { return Gdk.EVENT_STOP; });
+            close_button.button_release_event.connect (() => { return Gdk.EVENT_STOP; });
 
             add_child (close_button);
 
@@ -519,6 +519,9 @@ namespace Gala {
             set_position (abs_x + prev_parent_x, abs_y + prev_parent_y);
 
             toggle_close_button (false);
+
+            // disable reactivity so that workspace thumbs can get events
+            reactive = false;
 
             return this;
         }
