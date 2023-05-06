@@ -55,17 +55,15 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
             || window_type == Meta.WindowType.MODAL_DIALOG;
     }
 
-    private static void get_current_cursor_position (out int x, out int y) {
-        Gdk.Display.get_default ().get_default_seat ().get_pointer ().get_position (null, out x, out y);
-    }
-
     public PopupWindow (Gala.WindowManager wm, Meta.WindowActor window_actor) {
         Object (wm: wm, window_actor: window_actor);
     }
 
     construct {
-        var scale = Utils.get_ui_scaling_factor ();
-        button_size = 36 * scale;
+        unowned var display = wm.get_display ();
+        var scale = display.get_monitor_scale (display.get_current_monitor ());
+
+        button_size = Gala.Utils.scale_to_int (36, scale);
         container_margin = button_size / 2;
 
         reactive = true;
@@ -115,7 +113,7 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
         close_action = new Clutter.ClickAction ();
         close_action.clicked.connect (on_close_click_clicked);
 
-        close_button = Gala.Utils.create_close_button ();
+        close_button = Gala.Utils.create_close_button (scale);
         close_button.opacity = 0;
         close_button.reactive = true;
         // TODO: Check if close button should be on the right
@@ -123,7 +121,7 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
         close_button.add_constraint (new Clutter.AlignConstraint (this, Clutter.AlignAxis.Y_AXIS, 0.0f));
         close_button.add_action (close_action);
 
-        resize_button = Utils.create_resize_button ();
+        resize_button = Utils.create_resize_button (scale);
         resize_button.opacity = 0;
         resize_button.reactive = true;
         resize_button.add_constraint (new Clutter.AlignConstraint (this, Clutter.AlignAxis.X_AXIS, 1.0f));
@@ -183,7 +181,7 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
         resize_button.opacity = 255;
         resize_button.restore_easing_state ();
 
-        return Gdk.EVENT_PROPAGATE;
+        return Clutter.EVENT_PROPAGATE;
     }
 
     public override bool leave_event (Clutter.CrossingEvent event) {
@@ -199,7 +197,7 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
         resize_button.opacity = 0;
         resize_button.restore_easing_state ();
 
-        return Gdk.EVENT_PROPAGATE;
+        return Clutter.EVENT_PROPAGATE;
     }
 
     public void set_container_clip (Graphene.Rect? container_clip) {
@@ -220,12 +218,13 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
 
     private bool on_resize_button_press (Clutter.ButtonEvent event) {
         if (resizing || event.button != 1) {
-            return Gdk.EVENT_STOP;
+            return Clutter.EVENT_STOP;
         }
 
         resizing = true;
 
-        get_current_cursor_position (out resize_start_x, out resize_start_y);
+        resize_start_x = event.x;
+        resize_start_y = event.y;
 
         begin_resize_width = width;
         begin_resize_height = height;
@@ -233,27 +232,25 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
         grab = resize_button.get_stage ().grab (resize_button);
         resize_button.event.connect (on_resize_event);
 
-        return Gdk.EVENT_PROPAGATE;
+        return Clutter.EVENT_PROPAGATE;
     }
 
     private bool on_resize_event (Clutter.Event event) {
         if (!resizing) {
-            return Gdk.EVENT_STOP;
+            return Clutter.EVENT_STOP;
         }
 
         switch (event.get_type ()) {
             case Clutter.EventType.MOTION:
+                unowned var motion_event = (Clutter.MotionEvent) event;
                 var mods = event.get_state ();
                 if (!(Clutter.ModifierType.BUTTON1_MASK in mods)) {
                     stop_resizing ();
                     break;
                 }
 
-                int motion_x, motion_y;
-                get_current_cursor_position (out motion_x, out motion_y);
-
-                float diff_x = motion_x - resize_start_x;
-                float diff_y = motion_y - resize_start_y;
+                float diff_x = motion_event.x - resize_start_x;
+                float diff_y = motion_event.y - resize_start_y;
 
                 width = begin_resize_width + diff_x;
                 height = begin_resize_height + diff_y;
@@ -270,12 +267,12 @@ public class Gala.Plugins.PIP.PopupWindow : Clutter.Actor {
                 break;
             case Clutter.EventType.LEAVE:
             case Clutter.EventType.ENTER:
-                return Gdk.EVENT_PROPAGATE;
+                return Clutter.EVENT_PROPAGATE;
             default:
                 break;
         }
 
-        return Gdk.EVENT_STOP;
+        return Clutter.EVENT_STOP;
     }
 
     private void stop_resizing () {
