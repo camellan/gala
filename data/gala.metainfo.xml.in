@@ -4,15 +4,28 @@
   <id>io.elementary.gala</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0+</project_license>
+  <compulsory_for_desktop>Pantheon</compulsory_for_desktop>
+  <translation type="gettext">gala</translation>
+
+  <icon type="stock">preferences-desktop-workspaces</icon>
   <name>Multitasking &amp; Window Management</name>
   <summary>A window &amp; compositing manager for Pantheon</summary>
-  <icon type="stock">preferences-desktop-workspaces</icon>
   <description>
     <p>A window &amp; compositing manager based on libmutter and designed by elementary for use with Pantheon.</p>
   </description>
 
+  <url type="homepage">https://elementary.io/</url>
+  <url type="bugtracker">https://github.com/elementary/gala/issues</url>
+  <url type="donation">https://elementary.io/get-involved#funding</url>
+  <url type="help">https://github.com/elementary/gala/discussions/categories/q-a</url>
+  <url type="translate">https://l10n.elementary.io/engage/desktop/</url>
+
+  <developer_name>elementary, Inc.</developer_name>
+  <project_group>elementary</project_group>
+  <update_contact>contact_at_elementary.io</update_contact>
+
   <releases>
-    <release version="7.0.3" date="2023-04-03" urgency="medium">
+    <release version="7.1.0" date="2023-06-26" urgency="medium">
       <description>
         <p>Improvements:</p>
         <ul>
@@ -20,7 +33,32 @@
         </ul>
       </description>
       <issues>
+        <issue url="https://github.com/elementary/gala/issues/1091">Accessibility grayscale and colourblind filters</issue>
+      </issues>
+    </release>
+
+    <release version="7.0.3" date="2023-05-01" urgency="medium">
+      <description>
+        <p>Improvements:</p>
+        <ul>
+          <li>Set the keyboard layout correctly at startup so that the indicator matches the selected layout</li>
+          <li>Fix screenshot keyboard shortcuts while in Multitasking View</li>
+          <li>Correctly set the active workspace highlight when entering Multitasking View and animate 1:1 with multitouch gestures</li>
+          <li>Update panel color after dimming the wallpaper</li>
+          <li>Scale rounded corners per-display</li>
+          <li>Support fractional scaling</li>
+          <li>Updated translations</li>
+        </ul>
+      </description>
+      <issues>
+        <issue url="https://github.com/elementary/gala/issues/124">Navigate with arrow keys while holding ALT+TAB</issue>
+        <issue url="https://github.com/elementary/gala/issues/508">Multitasking View open/close doesn't respect animations key</issue>
         <issue url="https://github.com/elementary/gala/issues/536">Enable "Alt + ~" to switch between windows of the same application</issue>
+        <issue url="https://github.com/elementary/gala/issues/1343">Minimizing a single open application and then immediately doing alt+tab breaks the switcher and the session</issue>
+        <issue url="https://github.com/elementary/gala/issues/1355">Issue with rounded corners of window switcher</issue>
+        <issue url="https://github.com/elementary/gala/issues/1547">Window switcher doesn't respect animations key</issue>
+        <issue url="https://github.com/elementary/gala/issues/1641">Docks are placed under workspaces when animating</issue>
+        <issue url="https://github.com/elementary/gala/issues/1658">Topmost window is dimmed instead of modal's parent window</issue>
       </issues>
     </release>
 
@@ -108,27 +146,6 @@
       </issues>
     </release>
 
-    <release version="6.3.2" date="2022-10-12" urgency="medium">
-      <description>
-        <p>Fixes:</p>
-        <ul>
-          <li>Fix regressions for OS 7</li>
-        </ul>
-        <p>Improvements:</p>
-        <ul>
-          <li>Use access portal for force quit</li>
-          <li>Updated translations</li>
-        </ul>
-      </description>
-      <issues>
-        <issue url="https://github.com/elementary/gala/issues/1334">Make sure not to re-trigger hot corner actions too quickly</issue>
-        <issue url="https://github.com/elementary/gala/issues/966">Add a function to dim the wallpaper when dark style is active</issue>
-      </issues>
-    </release>
+    <release version="6.3.2" date="2022-10-12" urgency="medium"/>
   </releases>
-
-  <compulsory_for_desktop>Pantheon</compulsory_for_desktop>
-  <developer_name>elementary, Inc.</developer_name>
-  <url type="homepage">https://elementary.io</url>
-  <url type="bugtracker">https://github.com/elementary/gala/issues</url>
 </component>

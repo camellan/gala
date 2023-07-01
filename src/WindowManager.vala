@@ -196,11 +196,7 @@ namespace Gala {
             var color = background_settings.get_string ("primary-color");
             stage.background_color = Clutter.Color.from_string (color);
 
-            unowned var laters = display.get_compositor ().get_laters ();
-            laters.add (Meta.LaterType.BEFORE_REDRAW, () => {
-                WorkspaceManager.init (this);
-                return false;
-            });
+            WorkspaceManager.init (this);
 
             /* our layer structure:
              * stage
@@ -242,6 +238,8 @@ namespace Gala {
             stage.remove_child (top_window_group);
             ui_group.add_child (top_window_group);
 
+            FilterManager.init (this);
+
             /*keybindings*/
             var keybinding_settings = new GLib.Settings (Config.SCHEMA + ".keybindings");
 
@@ -280,11 +278,6 @@ namespace Gala {
             Meta.KeyBinding.set_custom_handler ("move-to-workspace-left", (Meta.KeyHandlerFunc) handle_move_to_workspace);
             Meta.KeyBinding.set_custom_handler ("move-to-workspace-right", (Meta.KeyHandlerFunc) handle_move_to_workspace);
 
-            /*shadows*/
-            InternalUtils.reload_shadow ();
-            var shadow_settings = new GLib.Settings (Config.SCHEMA + ".shadows");
-            shadow_settings.changed.connect (InternalUtils.reload_shadow);
-
             unowned var monitor_manager = display.get_context ().get_backend ().get_monitor_manager ();
             monitor_manager.monitors_changed.connect (on_monitors_changed);
 
@@ -294,81 +287,71 @@ namespace Gala {
 
             zoom = new Zoom (this);
 
-            // Most things inside this "later" depend on GTK. We get segfaults if we try to do GTK stuff before the window manager
-            // is initialized, so we hold this stuff off until we're ready to draw
-            laters.add (Meta.LaterType.BEFORE_REDRAW, () => {
-                string[] args = {};
-                unowned string[] _args = args;
-                Gtk.init (ref _args);
+            accent_color_manager = new AccentColorManager ();
 
-                accent_color_manager = new AccentColorManager ();
+            // initialize plugins and add default components if no plugin overrides them
+            var plugin_manager = PluginManager.get_default ();
+            plugin_manager.initialize (this);
+            plugin_manager.regions_changed.connect (update_input_area);
 
-                // initialize plugins and add default components if no plugin overrides them
-                var plugin_manager = PluginManager.get_default ();
-                plugin_manager.initialize (this);
-                plugin_manager.regions_changed.connect (update_input_area);
+            if (plugin_manager.workspace_view_provider == null
+                || (workspace_view = (plugin_manager.get_plugin (plugin_manager.workspace_view_provider) as ActivatableComponent)) == null) {
+                workspace_view = new MultitaskingView (this);
+                ui_group.add_child ((Clutter.Actor) workspace_view);
+            }
 
-                if (plugin_manager.workspace_view_provider == null
-                    || (workspace_view = (plugin_manager.get_plugin (plugin_manager.workspace_view_provider) as ActivatableComponent)) == null) {
-                    workspace_view = new MultitaskingView (this);
-                    ui_group.add_child ((Clutter.Actor) workspace_view);
-                }
-
-                Meta.KeyBinding.set_custom_handler ("show-desktop", () => {
-                    if (workspace_view.is_opened ())
-                        workspace_view.close ();
-                    else
-                        workspace_view.open ();
-                });
-
-                if (plugin_manager.window_switcher_provider == null) {
-                    winswitcher = new WindowSwitcher (this);
-                    ui_group.add_child (winswitcher);
-
-                    Meta.KeyBinding.set_custom_handler ("switch-applications", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
-                    Meta.KeyBinding.set_custom_handler ("switch-applications-backward", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
-                    Meta.KeyBinding.set_custom_handler ("switch-windows", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
-                    Meta.KeyBinding.set_custom_handler ("switch-windows-backward", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
-                    Meta.KeyBinding.set_custom_handler ("switch-group", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
-                    Meta.KeyBinding.set_custom_handler ("switch-group-backward", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
-                }
-
-                if (plugin_manager.window_overview_provider == null
-                    || (window_overview = (plugin_manager.get_plugin (plugin_manager.window_overview_provider) as ActivatableComponent)) == null) {
-                    window_overview = new WindowOverview (this);
-                    ui_group.add_child ((Clutter.Actor) window_overview);
-                }
-
-                notification_group = new Clutter.Actor ();
-                ui_group.add_child (notification_group);
-
-                pointer_locator = new PointerLocator (this);
-                ui_group.add_child (pointer_locator);
-                ui_group.add_child (new DwellClickTimer (this));
-
-                ui_group.add_child (screen_shield);
-
-                display.add_keybinding ("expose-windows", keybinding_settings, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT, () => {
-                    if (window_overview.is_opened ()) {
-                        window_overview.close ();
-                    } else {
-                        window_overview.open ();
-                    }
-                });
-                display.add_keybinding ("expose-all-windows", keybinding_settings, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT, () => {
-                    if (window_overview.is_opened ()) {
-                        window_overview.close ();
-                    } else {
-                        var hints = new HashTable<string,Variant> (str_hash, str_equal);
-                        hints.@set ("all-windows", true);
-                        window_overview.open (hints);
-                    }
-                });
-
-                plugin_manager.load_waiting_plugins ();
-
-                return false;
+            Meta.KeyBinding.set_custom_handler ("show-desktop", () => {
+                if (workspace_view.is_opened ())
+                    workspace_view.close ();
+                else
+                    workspace_view.open ();
             });
+
+            if (plugin_manager.window_switcher_provider == null) {
+                winswitcher = new WindowSwitcher (this);
+                ui_group.add_child (winswitcher);
+
+                Meta.KeyBinding.set_custom_handler ("switch-applications", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
+                Meta.KeyBinding.set_custom_handler ("switch-applications-backward", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
+                Meta.KeyBinding.set_custom_handler ("switch-windows", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
+                Meta.KeyBinding.set_custom_handler ("switch-windows-backward", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
+                Meta.KeyBinding.set_custom_handler ("switch-group", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
+                Meta.KeyBinding.set_custom_handler ("switch-group-backward", (Meta.KeyHandlerFunc) winswitcher.handle_switch_windows);
+            }
+
+            if (plugin_manager.window_overview_provider == null
+                || (window_overview = (plugin_manager.get_plugin (plugin_manager.window_overview_provider) as ActivatableComponent)) == null) {
+                window_overview = new WindowOverview (this);
+                ui_group.add_child ((Clutter.Actor) window_overview);
+            }
+
+            notification_group = new Clutter.Actor ();
+            ui_group.add_child (notification_group);
+
+            pointer_locator = new PointerLocator (this);
+            ui_group.add_child (pointer_locator);
+            ui_group.add_child (new DwellClickTimer (this));
+
+            ui_group.add_child (screen_shield);
+
+            display.add_keybinding ("expose-windows", keybinding_settings, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT, () => {
+                if (window_overview.is_opened ()) {
+                    window_overview.close ();
+                } else {
+                    window_overview.open ();
+                }
+            });
+            display.add_keybinding ("expose-all-windows", keybinding_settings, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT, () => {
+                if (window_overview.is_opened ()) {
+                    window_overview.close ();
+                } else {
+                    var hints = new HashTable<string,Variant> (str_hash, str_equal);
+                    hints.@set ("all-windows", true);
+                    window_overview.open (hints);
+                }
+            });
+
+            plugin_manager.load_waiting_plugins ();
 
             update_input_area ();
 
@@ -524,7 +507,7 @@ namespace Gala {
                 return;
             }
 
-            var can_handle_swipe = gesture.type == Gdk.EventType.TOUCHPAD_SWIPE &&
+            var can_handle_swipe = gesture.type == Clutter.EventType.TOUCHPAD_SWIPE &&
                 (gesture.direction == GestureDirection.LEFT || gesture.direction == GestureDirection.RIGHT);
 
             var fingers = (gesture.fingers == 3 && GestureSettings.get_string ("three-finger-swipe-horizontal") == "switch-to-workspace") ||
@@ -567,7 +550,8 @@ namespace Gala {
             }
 
             animating_nudge = true;
-            var nudge_gap = NUDGE_GAP * InternalUtils.get_ui_scaling_factor ();
+            var scale = get_display ().get_monitor_scale (get_display ().get_primary_monitor ());
+            var nudge_gap = InternalUtils.scale_to_int ((int)NUDGE_GAP, scale);
 
             float dest = 0;
             if (!switch_workspace_with_gesture) {
@@ -811,13 +795,8 @@ namespace Gala {
             return (proxy in modal_stack);
         }
 
-        public void get_current_cursor_position (out int x, out int y) {
-            Gdk.Display.get_default ().get_default_seat ().get_pointer ().get_position (null,
-                out x, out y);
-        }
-
         private void dim_parent_window (Meta.Window window, bool dim) {
-            unowned var ancestor = window.find_root_ancestor ();
+            unowned var ancestor = window.get_transient_for ();
             if (ancestor != null && ancestor != window) {
                 unowned var win = (Meta.WindowActor) ancestor.get_compositor_private ();
                 // Can't rely on win.has_effects since other effects could be applied
@@ -867,11 +846,19 @@ namespace Gala {
                     break;
                 case ActionType.START_MOVE_CURRENT:
                     if (current != null && current.allows_move ())
+#if HAS_MUTTER44
+                        current.begin_grab_op (Meta.GrabOp.KEYBOARD_MOVING, null, null, Gtk.get_current_event_time ());
+#else
                         current.begin_grab_op (Meta.GrabOp.KEYBOARD_MOVING, true, Gtk.get_current_event_time ());
+#endif
                     break;
                 case ActionType.START_RESIZE_CURRENT:
                     if (current != null && current.allows_resize ())
+#if HAS_MUTTER44
+                        current.begin_grab_op (Meta.GrabOp.KEYBOARD_RESIZING_UNKNOWN, null, null, Gtk.get_current_event_time ());
+#else
                         current.begin_grab_op (Meta.GrabOp.KEYBOARD_RESIZING_UNKNOWN, true, Gtk.get_current_event_time ());
+#endif
                     break;
                 case ActionType.TOGGLE_ALWAYS_ON_TOP_CURRENT:
                     if (current == null)
@@ -1177,11 +1164,11 @@ namespace Gala {
             Meta.Rectangle icon = {};
             if (actor.get_meta_window ().get_icon_geometry (out icon)) {
                 // Fix icon position and size according to ui scaling factor.
-                int ui_scale = InternalUtils.get_ui_scaling_factor ();
-                icon.x *= ui_scale;
-                icon.y *= ui_scale;
-                icon.width *= ui_scale;
-                icon.height *= ui_scale;
+                float ui_scale = get_display ().get_monitor_scale (get_display ().get_monitor_index_for_rect (icon));
+                icon.x = InternalUtils.scale_to_int (icon.x, ui_scale);
+                icon.y = InternalUtils.scale_to_int (icon.y, ui_scale);
+                icon.width = InternalUtils.scale_to_int (icon.width, ui_scale);
+                icon.height = InternalUtils.scale_to_int (icon.height, ui_scale);
 
                 float scale_x = (float)icon.width / actor.width;
                 float scale_y = (float)icon.height / actor.height;
@@ -1940,8 +1927,9 @@ namespace Gala {
             main_container.width = move_primary_only ? monitor_geom.width : screen_width;
             main_container.height = move_primary_only ? monitor_geom.height : screen_height;
 
+            var monitor_scale = display.get_monitor_scale (primary);
             var x2 = move_primary_only ? monitor_geom.width : screen_width;
-            x2 += WORKSPACE_GAP * InternalUtils.get_ui_scaling_factor ();
+            x2 += WORKSPACE_GAP * monitor_scale;
             if (direction == Meta.MotionDirection.RIGHT)
                 x2 = -x2;
 
@@ -2134,7 +2122,12 @@ namespace Gala {
         }
 
         public override void confirm_display_change () {
+#if HAS_MUTTER44
+            unowned var monitor_manager = get_display ().get_context ().get_backend ().get_monitor_manager ();
+            var timeout = monitor_manager.get_display_configuration_timeout ();
+#else
             var timeout = Meta.MonitorManager.get_display_configuration_timeout ();
+#endif
             var summary = ngettext (
                 "Changes will automatically revert after %i second.",
                 "Changes will automatically revert after %i seconds.",

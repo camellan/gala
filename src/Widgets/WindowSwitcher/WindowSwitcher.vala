@@ -3,18 +3,17 @@
  * Copyright 2020 Mark Story <mark@mark-story.com>
  * Copyright 2017 Popye <sailor3101@gmail.com>
  * Copyright 2014 Tom Beckmann
+ * Copyright 2023 elementary, Inc. <https://elementary.io>
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 namespace Gala {
     public class WindowSwitcher : Clutter.Actor {
         public const int ICON_SIZE = 64;
-        public const int WRAPPER_BORDER_RADIUS = 3;
         public const int WRAPPER_PADDING = 12;
-        public const string CAPTION_FONT_NAME = "Inter";
-
+        private const string CAPTION_FONT_NAME = "Inter";
         private const int MIN_OFFSET = 64;
-        private const int FIX_TIMEOUT_INTERVAL = 100;
+        private const int ANIMATION_DURATION = 200;
 
         public bool opened { get; private set; default = false; }
 
@@ -24,19 +23,33 @@ namespace Gala {
         private Granite.Settings granite_settings;
         private Clutter.Canvas canvas;
         private Clutter.Actor container;
-        private Clutter.Actor indicator;
         private Clutter.Text caption;
+
+        private Gtk.WidgetPath widget_path;
+        private Gtk.StyleContext style_context;
 
         private int modifier_mask;
 
-        private WindowIcon? cur_icon = null;
+        private WindowSwitcherIcon? _current_icon = null;
+        private WindowSwitcherIcon? current_icon {
+            get {
+                return _current_icon;
+            }
+            set {
+                if (_current_icon != null) {
+                    _current_icon.selected = false;
+                }
 
-        private int scaling_factor = 1;
+                _current_icon = value;
+                if (_current_icon != null) {
+                    _current_icon.selected = true;
+                }
 
-        // For some reason, on Odin, the height of the caption loses
-        // its padding after the first time the switcher displays. As a
-        // workaround, I store the initial value here once we have it.
-        private float caption_height = -1.0f;
+                update_caption_text ();
+            }
+        }
+
+        private float scaling_factor = 1.0f;
 
         public WindowSwitcher (Gala.WindowManager wm) {
             Object (wm: wm);
@@ -46,21 +59,23 @@ namespace Gala {
             var gtk_settings = Gtk.Settings.get_default ();
             granite_settings = Granite.Settings.get_default ();
 
-            scaling_factor = InternalUtils.get_ui_scaling_factor ();
+            unowned var display = wm.get_display ();
+            scaling_factor = display.get_monitor_scale (display.get_current_monitor ());
 
             canvas = new Clutter.Canvas ();
             canvas.scale_factor = scaling_factor;
             set_content (canvas);
 
+            opacity = 0;
+
             // Carry out the initial draw
             create_components ();
 
-            // FIXME: Kind of abusing the style class here for a smaller shadow
-            var effect = new ShadowEffect (30) {
+            var effect = new ShadowEffect (40) {
                 shadow_opacity = 200,
-                css_class = "workspace"
+                css_class = "window-switcher",
+                scale_factor = scaling_factor
             };
-
             add_effect (effect);
 
             // Redraw the components if the colour scheme changes.
@@ -76,10 +91,11 @@ namespace Gala {
 
             unowned var monitor_manager = wm.get_display ().get_context ().get_backend ().get_monitor_manager ();
             monitor_manager.monitors_changed.connect (() => {
-                var cur_scale = InternalUtils.get_ui_scaling_factor ();
+                var cur_scale = display.get_monitor_scale (display.get_current_monitor ());
                 if (cur_scale != scaling_factor) {
                     scaling_factor = cur_scale;
                     canvas.scale_factor = scaling_factor;
+                    effect.scale_factor = scaling_factor;
                     create_components ();
                 }
             });
@@ -88,25 +104,23 @@ namespace Gala {
         }
 
         private bool draw (Cairo.Context ctx, int width, int height) {
+            if (style_context == null) { // gtk is not initialized yet
+                create_gtk_objects ();
+            }
+
             ctx.save ();
-
-            var widget_path = new Gtk.WidgetPath ();
-            widget_path.append_type (typeof (Gtk.Window));
-            widget_path.iter_set_object_name (-1, "window");
-
-            var style_context = new Gtk.StyleContext ();
-            style_context.set_scale (scaling_factor);
-            style_context.set_path (widget_path);
-            style_context.add_class ("background");
-            style_context.add_class ("csd");
-            style_context.add_class ("unified");
+            ctx.set_operator (Cairo.Operator.CLEAR);
+            ctx.paint ();
+            ctx.clip ();
+            ctx.reset_clip ();
 
             if (granite_settings.prefers_color_scheme == Granite.Settings.ColorScheme.DARK) {
-                var gtksettings = Gtk.Settings.get_default ();
-                var css_provider = Gtk.CssProvider.get_named (gtksettings.gtk_theme_name, "dark");
+                unowned var gtksettings = Gtk.Settings.get_default ();
+                unowned var css_provider = Gtk.CssProvider.get_named (gtksettings.gtk_theme_name, "dark");
                 style_context.add_provider (css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
             }
 
+            ctx.set_operator (Cairo.Operator.OVER);
             style_context.render_background (ctx, 0, 0, width, height);
             style_context.render_frame (ctx, 0, 0, width, height);
             ctx.restore ();
@@ -117,50 +131,22 @@ namespace Gala {
         private void create_components () {
             // We've already been constructed once, start again
             if (container != null) {
-                caption_height = -1.0f;
                 destroy_all_children ();
             }
 
+            var margin = InternalUtils.scale_to_int (WRAPPER_PADDING, scaling_factor);
             var layout = new Clutter.FlowLayout (Clutter.FlowOrientation.HORIZONTAL);
-            container = new Clutter.Actor ();
-            container.layout_manager = layout;
-            container.reactive = true;
+            container = new Clutter.Actor () {
+                reactive = true,
+                layout_manager = layout,
+                margin_left = margin,
+                margin_top = margin,
+                margin_right = margin,
+                margin_bottom = margin
+            };
+
             container.button_release_event.connect (container_mouse_release);
             container.motion_event.connect (container_motion_event);
-
-            var rgba = InternalUtils.get_theme_accent_color ();
-            var accent_color = Clutter.Color ();
-            accent_color.init (
-                (uint8) (rgba.red * 255),
-                (uint8) (rgba.green * 255),
-                (uint8) (rgba.blue * 255),
-                (uint8) (rgba.alpha * 255)
-            );
-
-            var rect_radius = WRAPPER_BORDER_RADIUS * scaling_factor;
-            indicator = new Clutter.Actor ();
-            indicator.margin_left = indicator.margin_top =
-                indicator.margin_right = indicator.margin_bottom = 0;
-            indicator.set_pivot_point (0.5f, 0.5f);
-            var indicator_canvas = new Clutter.Canvas ();
-            indicator.set_content (indicator_canvas);
-            indicator_canvas.scale_factor = scaling_factor;
-            indicator_canvas.draw.connect ((ctx, width, height) => {
-                ctx.save ();
-                ctx.set_operator (Cairo.Operator.CLEAR);
-                ctx.paint ();
-                ctx.clip ();
-                ctx.reset_clip ();
-
-                // draw rect
-                Clutter.cairo_set_source_color (ctx, accent_color);
-                Drawing.Utilities.cairo_rounded_rectangle (ctx, 0, 0, width, height, rect_radius);
-                ctx.set_operator (Cairo.Operator.SOURCE);
-                ctx.fill ();
-
-                ctx.restore ();
-                return true;
-            });
 
             var caption_color = "#2e2e31";
 
@@ -173,9 +159,21 @@ namespace Gala {
             caption.set_ellipsize (Pango.EllipsizeMode.END);
             caption.set_line_alignment (Pango.Alignment.CENTER);
 
-            add_child (indicator);
             add_child (container);
             add_child (caption);
+        }
+
+        private void create_gtk_objects () {
+            widget_path = new Gtk.WidgetPath ();
+            widget_path.append_type (typeof (Gtk.Window));
+            widget_path.iter_set_object_name (-1, "window");
+
+            style_context = new Gtk.StyleContext ();
+            style_context.set_scale ((int)Math.round (scaling_factor));
+            style_context.set_path (widget_path);
+            style_context.add_class ("background");
+            style_context.add_class ("csd");
+            style_context.add_class ("unified");
         }
 
         [CCode (instance_pos = -1)]
@@ -210,13 +208,12 @@ namespace Gala {
                 }
 
                 open_switcher ();
-                update_indicator_position (true);
             }
 
             var binding_name = binding.get_name ();
             var backward = binding_name.has_suffix ("-backward");
 
-            next_window (display, workspace, backward);
+            next_window (backward);
         }
 
         private bool collect_all_windows (Meta.Display display, Meta.Workspace? workspace) {
@@ -226,14 +223,17 @@ namespace Gala {
             }
 
             unowned var current_window = display.get_tab_current (Meta.TabList.NORMAL, workspace);
+            if (current_window == null) {
+                current_icon = null;
+            }
 
             container.width = -1;
             container.destroy_all_children ();
 
             foreach (unowned var window in windows) {
-                var icon = new WindowIcon (window, ICON_SIZE * scaling_factor);
+                var icon = new WindowSwitcherIcon (window, ICON_SIZE, scaling_factor);
                 if (window == current_window) {
-                    cur_icon = icon;
+                    current_icon = icon;
                 }
 
                 container.add_child (icon);
@@ -250,6 +250,7 @@ namespace Gala {
 
             unowned var current_window = display.get_tab_current (Meta.TabList.NORMAL, workspace);
             if (current_window == null) {
+                current_icon = null;
                 return false;
             }
 
@@ -260,9 +261,9 @@ namespace Gala {
             var app = window_tracker.get_app_for_window (current_window);
             foreach (unowned var window in windows) {
                 if (window_tracker.get_app_for_window (window) == app) {
-                    var icon = new WindowIcon (window, ICON_SIZE * scaling_factor);
+                    var icon = new WindowSwitcherIcon (window, ICON_SIZE, scaling_factor);
                     if (window == current_window) {
-                        cur_icon = icon;
+                        current_icon = icon;
                     }
 
                     container.add_child (icon);
@@ -273,8 +274,6 @@ namespace Gala {
         }
 
         private void open_switcher () {
-            var display = wm.get_display ();
-
             if (container.get_n_children () == 0) {
                 Clutter.get_default_backend ().get_default_seat ().bell_notify ();
                 return;
@@ -284,53 +283,32 @@ namespace Gala {
                 return;
             }
 
-            container.margin_left = container.margin_top =
-                container.margin_right = container.margin_bottom = (WRAPPER_PADDING * 2 * scaling_factor);
+            opacity = 0;
 
-            var l = container.layout_manager as Clutter.FlowLayout;
-            l.column_spacing = l.row_spacing = WRAPPER_PADDING * scaling_factor;
-
-            indicator.visible = false;
-            var indicator_size = (ICON_SIZE + WRAPPER_PADDING * 2) * scaling_factor;
-            indicator.set_size (indicator_size, indicator_size);
-            ((Clutter.Canvas) indicator.content).set_size (indicator_size, indicator_size);
-            caption.visible = false;
-            caption.margin_bottom = caption.margin_top = WRAPPER_PADDING * scaling_factor;
-
+            unowned var display = wm.get_display ();
             var monitor = display.get_current_monitor ();
             var geom = display.get_monitor_geometry (monitor);
 
             float container_width;
             container.get_preferred_width (
-                ICON_SIZE * scaling_factor + container.margin_left + container.margin_right,
+                InternalUtils.scale_to_int (ICON_SIZE, scaling_factor) + container.margin_left + container.margin_right,
                 null,
                 out container_width
             );
-            if (container_width + MIN_OFFSET * scaling_factor * 2 > geom.width) {
-                container.width = geom.width - MIN_OFFSET * scaling_factor * 2;
+            if (container_width + InternalUtils.scale_to_int (MIN_OFFSET, scaling_factor) * 2 > geom.width) {
+                container.width = geom.width - InternalUtils.scale_to_int (MIN_OFFSET, scaling_factor) * 2;
             }
 
             float nat_width, nat_height;
-            container.get_preferred_size (null, null, out nat_width, null);
+            container.get_preferred_size (null, null, out nat_width, out nat_height);
 
-            nat_width -= (WRAPPER_PADDING * scaling_factor) / container.get_n_children ();
-
-            container.get_preferred_size (null, null, null, out nat_height);
-
-            // For some reason, on Odin, the height of the caption loses
-            // its padding after the first time the switcher displays. As a
-            // workaround, I store the initial value here once we have it
-            // and use that correct value on subsequent attempts.
-            if (caption_height == -1.0f) {
-                caption_height = caption.height;
-            }
-
-            opacity = 0;
-
-            var switcher_height = (int) (nat_height + caption_height / 2 - container.margin_bottom + WRAPPER_PADDING * 3 * scaling_factor);
+            var switcher_height = (int) (nat_height + caption.height / 2 - container.margin_bottom + WRAPPER_PADDING * 3 * scaling_factor);
             set_size ((int) nat_width, switcher_height);
             canvas.set_size ((int) nat_width, switcher_height);
             canvas.invalidate ();
+
+            // container width might have changed, so we must update caption width too
+            update_caption_text ();
 
             set_position (
                 (int) (geom.x + (geom.width - width) / 2),
@@ -358,7 +336,7 @@ namespace Gala {
             }
 
             save_easing_state ();
-            set_easing_duration (200);
+            set_easing_duration (wm.enable_animations ? ANIMATION_DURATION : 0);
             opacity = show ? 255 : 0;
             restore_easing_state ();
 
@@ -394,7 +372,7 @@ namespace Gala {
                 return;
             }
 
-            var window = cur_icon.window;
+            var window = current_icon.window;
             if (window == null) {
                 return;
             }
@@ -411,73 +389,42 @@ namespace Gala {
             toggle_display (false);
         }
 
-        private void next_window (Meta.Display display, Meta.Workspace? workspace, bool backward) {
+        private void next_window (bool backward) {
             Clutter.Actor actor;
-            var current = cur_icon;
 
-            if (container.get_n_children () == 1) {
+            if (container.get_n_children () == 1 && current_icon != null) {
                 Clutter.get_default_backend ().get_default_seat ().bell_notify ();
                 return;
             }
 
-            if (!backward) {
-                actor = current.get_next_sibling ();
+            if (current_icon == null) {
+                actor = container.get_first_child ();
+            } else if (!backward) {
+                actor = current_icon.get_next_sibling ();
                 if (actor == null) {
                     actor = container.get_first_child ();
                 }
             } else {
-                actor = current.get_previous_sibling ();
+                actor = current_icon.get_previous_sibling ();
                 if (actor == null) {
                     actor = container.get_last_child ();
                 }
             }
 
-            cur_icon = (WindowIcon) actor;
-            update_indicator_position ();
+            current_icon = (WindowSwitcherIcon) actor;
         }
 
         private void update_caption_text () {
-            var current_window = cur_icon.window;
-            var current_caption = "n/a";
-            if (current_window != null) {
-                current_caption = current_window.get_title ();
-            }
+            var current_window = current_icon != null ? current_icon.window : null;
+            var current_caption = current_window != null ? current_window.title : "n/a";
             caption.set_text (current_caption);
-            caption.visible = true;
 
             // Make caption smaller than the wrapper, so it doesn't overflow.
             caption.width = width - WRAPPER_PADDING * 2 * scaling_factor;
             caption.set_position (
-                WRAPPER_PADDING * scaling_factor,
-                (int) (height - caption_height / 2 - (WRAPPER_PADDING * scaling_factor * 2))
+                InternalUtils.scale_to_int (WRAPPER_PADDING, scaling_factor),
+                (int) (height - caption.height / 2 - InternalUtils.scale_to_int (WRAPPER_PADDING, scaling_factor) * 2)
             );
-        }
-
-        private void update_indicator_position (bool initial = false) {
-            // FIXME there are some troubles with layouting, in some cases we
-            //       are here too early, in which case all the children are at
-            //       (0|0), so we can easily check for that and come back later
-            if (container.get_n_children () > 1
-                && container.get_child_at_index (1).x < 1) {
-
-                GLib.Timeout.add (FIX_TIMEOUT_INTERVAL, () => {
-                    update_indicator_position (initial);
-                    return false;
-                }, GLib.Priority.DEFAULT);
-                return;
-            }
-
-            float x = cur_icon.x;
-            float y = cur_icon.y;
-
-            if (initial) {
-                indicator.visible = true;
-            }
-
-            // Move the indicator without animating it.
-            indicator.x = container.margin_left + (container.get_n_children () > 1 ? x : 0) - (WRAPPER_PADDING * scaling_factor);
-            indicator.y = container.margin_top + y - (WRAPPER_PADDING * scaling_factor);
-            update_caption_text ();
         }
 
         public override void key_focus_out () {
@@ -490,21 +437,20 @@ namespace Gala {
                 return true;
             }
 
-            var selected = actor as WindowIcon;
+            var selected = actor as WindowSwitcherIcon;
             if (selected == null) {
                 return true;
             }
 
-            if (cur_icon != selected) {
-                cur_icon = selected;
-                update_indicator_position ();
+            if (current_icon != selected) {
+                current_icon = selected;
             }
 
             return true;
         }
 
         private bool container_mouse_release (Clutter.ButtonEvent event) {
-            if (opened && event.button == Gdk.BUTTON_PRIMARY) {
+            if (opened && event.button == Clutter.Button.PRIMARY) {
                 close_switcher (event.time);
             }
 
@@ -514,27 +460,36 @@ namespace Gala {
         public override bool key_release_event (Clutter.KeyEvent event) {
             if ((get_current_modifiers () & modifier_mask) == 0) {
                 close_switcher (event.time);
-                return true;
             }
 
-            switch (event.keyval) {
-                case Clutter.Key.Escape:
-                    close_switcher (event.time, true);
-                    return true;
-            }
-
-            return false;
+            return Clutter.EVENT_PROPAGATE;
         }
 
-        private Gdk.ModifierType get_current_modifiers () {
-            Gdk.ModifierType modifiers;
-            double[] axes = {};
-            Gdk.Display.get_default ()
-                .get_device_manager ()
-                .get_client_pointer ()
-                .get_state (Gdk.get_default_root_window (), axes, out modifiers);
+        public override bool key_press_event (Clutter.KeyEvent event) {
+            switch (event.keyval) {
+                case Clutter.Key.Right:
+                    next_window (false);
+                    return Clutter.EVENT_STOP;
+                case Clutter.Key.Left:
+                    next_window (true);
+                    return Clutter.EVENT_STOP;
+                case Clutter.Key.Escape:
+                    close_switcher (event.time, true);
+                    return Clutter.EVENT_PROPAGATE;
+                case Clutter.Key.Return:
+                    close_switcher (event.time, false);
+                    return Clutter.EVENT_PROPAGATE;
+            }
 
-            return modifiers;
+            return Clutter.EVENT_PROPAGATE;
+        }
+
+
+        private inline Clutter.ModifierType get_current_modifiers () {
+            Clutter.ModifierType modifiers;
+            wm.get_display ().get_cursor_tracker ().get_pointer (null, out modifiers);
+
+            return modifiers & Clutter.ModifierType.MODIFIER_MASK;
         }
     }
 }
